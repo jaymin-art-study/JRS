@@ -952,18 +952,35 @@ function renderDetail(studentId){
         {bg:"#EEF2FF", border:"#6366F1", label:"#4338CA"},  // 리뷰어 1: 인디고
         {bg:"#ECFDF5", border:"#10B981", label:"#065F46"},   // 리뷰어 2: 에메랄드
       ];
+      const isActiveRound = !rd.adminDecision;
       rd.reviewers.forEach(rv=>{
+        const isMySlot = rv.user === session.uid;
+
+        // 진행 중인 차수: 리뷰어는 자기 슬롯만 봄 (다른 리뷰어 의견 숨김)
+        // 관리자는 항상 전체 표시
+        if(isActiveRound && !admin && !isMySlot) return;
+
         const rc = reviewerColors[(rv.slot-1) % 2];
+        const slotLabel = isMySlot && !admin ? "내 리뷰" : `리뷰어 ${rv.slot}`;
         html+=`<div style="margin-bottom:10px;border-left:3px solid ${rc.border};padding-left:10px">
           <div style="font-size:12px;font-weight:700;color:${rc.label};margin-bottom:4px;display:flex;align-items:center;gap:6px">
-            <span style="background:${rc.border};color:#fff;font-size:10px;padding:1px 7px;border-radius:10px">리뷰어 ${rv.slot}</span>
-            ${admin?" <span style='color:var(--muted);font-weight:400'>"+userLabelFull(rv.user)+"</span>":""}
+            <span style="background:${rc.border};color:#fff;font-size:10px;padding:1px 7px;border-radius:10px">${slotLabel}</span>
+            ${admin?` <span style='color:var(--muted);font-weight:400'>${userLabelFull(rv.user)}</span>`:""}
           </div>
           ${rv.feedback
             ?`<div class="decision-box ${rv.feedback.verdict}"><div class="v">${VMAP[rv.feedback.verdict]}</div><div>${esc(rv.feedback.comment)}</div></div>`
             :`<div style="font-size:12.5px;color:var(--muted);font-style:italic">마감 ${rv.deadline} · 리뷰 작성 전</div>`}
         </div>`;
       });
+      // 진행 중인 차수에서, 리뷰어에게 상대방 슬롯이 숨겨진 경우 안내 문구
+      if(isActiveRound && !admin && rd.reviewers.some(rv=>rv.user===session.uid)){
+        const other = rd.reviewers.find(rv=>rv.user!==session.uid);
+        if(other){
+          html+=`<div style="font-size:11.5px;color:var(--muted);font-style:italic;margin-top:4px">
+            * 공정한 리뷰를 위해 다른 리뷰어의 의견은 이 차수가 완료된 후 공개됩니다.
+          </div>`;
+        }
+      }
 
       // 관리자 최종 결정
       if(rd.adminDecision){
