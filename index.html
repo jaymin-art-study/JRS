@@ -124,7 +124,8 @@ function makeDefaultView(){
   return {
     tab:"mine", studentId:null, mode:"login", authErr:"", regRole:"teacher", regDept:DEPTS[0],
     verdictPick:null, reviewComment:"", adminVerdict:null, adminComment:"", resubmitDeadline:"",
-    editingStudent:false, recoverStep:1, recoverEmail:"", recoverErr:"", recoverOk:""
+    editingStudent:false, recoverStep:1, recoverEmail:"", recoverErr:"", recoverOk:"",
+    filterDept:"", filterCls:""
   };
 }
 
@@ -166,6 +167,41 @@ function statusOf(id){
   }
   if(r.adminDecision.verdict==="O") return {label:"✅ 승인 완료", cls:"b-done"};
   return {label:`${n}차 수정요청 (${r.adminDecision.resubmitDeadline||"-"})`, cls:"b-wait"};
+}
+
+// ─── 필터 헬퍼 ──────────────────────────────────────────
+window.__filterSet = function(type, val){
+  if(type==="dept"){ view.filterDept=val; view.filterCls=""; }
+  else              { view.filterCls=val; }
+  render();
+};
+
+function makeFilterBar(all){
+  const depts = [...new Set(all.map(([,s])=>s.dept||"기타"))].sort();
+  const clsPool = all.filter(([,s])=>!view.filterDept||s.dept===view.filterDept);
+  const classes = [...new Set(clsPool.map(([,s])=>s.cls||"미지정"))].sort((a,b)=>a.localeCompare(b,"ko"));
+  const filtered = all.filter(([,s])=>{
+    if(view.filterDept && s.dept!==view.filterDept) return false;
+    if(view.filterCls  && s.cls !==view.filterCls ) return false;
+    return true;
+  });
+  const bar = `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+    <select onchange="window.__filterSet('dept',this.value)" style="width:auto;padding:7px 10px;font-size:13px">
+      <option value="">전체 학과</option>
+      ${depts.map(d=>`<option value="${d}" ${view.filterDept===d?"selected":""}>${d}</option>`).join("")}
+    </select>
+    <select onchange="window.__filterSet('cls',this.value)" style="width:auto;padding:7px 10px;font-size:13px">
+      <option value="">전체 반</option>
+      ${classes.map(cl=>`<option value="${cl}" ${view.filterCls===cl?"selected":""}>${cl}</option>`).join("")}
+    </select>
+    <span style="font-size:12.5px;color:var(--muted)">
+      ${filtered.length === all.length
+        ? `전체 ${all.length}명`
+        : `<b style="color:var(--navy)">${filtered.length}명</b> / 전체 ${all.length}명`}
+    </span>
+    ${(view.filterDept||view.filterCls)?`<span onclick="view.filterDept='';view.filterCls='';render()" style="font-size:12px;color:var(--lblue);cursor:pointer;text-decoration:underline">필터 초기화</span>`:""}
+  </div>`;
+  return { bar, filtered };
 }
 
 // ─── Firestore CRUD ─────────────────────────────────────
@@ -508,21 +544,27 @@ function renderOverview(){
     }).join("")}
   </div>`;
 
-  // 전체 학생 목록 (선생님: 담당자 이름·리뷰 내용 비공개)
-  html += `<div style="margin:16px 0 8px;font-size:13px;font-weight:700;color:var(--navy)">전체 학생 목록</div>`;
-  html += all.map(([id,s])=>{
-    const st=statusOf(id);
-    const isMyStudent = s.owner===session.uid;
-    return `<div class="card" ${isMyStudent?`data-open="${id}" style="cursor:pointer"`:`style="opacity:.9"`}>
-      <div class="row">
-        <div>
-          <div class="name">${esc(s.name)} <span class="pill">${s.year}년 ${s.track}</span></div>
-          <div class="meta">${esc(s.dept)} · ${esc(s.cls)}${isMyStudent?" · <b style='color:var(--lblue)'>내 학생</b>":""}</div>
+  // 전체 학생 목록 (필터 포함, 선생님: 담당자 이름·리뷰 내용 비공개)
+  const {bar: ovBar, filtered: ovFiltered} = makeFilterBar(all);
+  html += `<div style="margin:16px 0 6px;font-size:13px;font-weight:700;color:var(--navy)">전체 학생 목록</div>`;
+  html += ovBar;
+  if(!ovFiltered.length){
+    html += `<div class="empty">해당 조건의 학생이 없습니다.</div>`;
+  } else {
+    html += ovFiltered.map(([id,s])=>{
+      const st=statusOf(id);
+      const isMyStudent = s.owner===session.uid;
+      return `<div class="card" ${isMyStudent?`data-open="${id}" style="cursor:pointer"`:`style="opacity:.9"`}>
+        <div class="row">
+          <div>
+            <div class="name">${esc(s.name)} <span class="pill">${s.year}년 ${s.track}</span></div>
+            <div class="meta">${esc(s.dept)} · ${esc(s.cls)}${isMyStudent?" · <b style='color:var(--lblue)'>내 학생</b>":""}</div>
+          </div>
+          <div class="badge ${st.cls}">${st.label}</div>
         </div>
-        <div class="badge ${st.cls}">${st.label}</div>
-      </div>
-    </div>`;
-  }).join("");
+      </div>`;
+    }).join("");
+  }
 
   return html;
 }
@@ -736,19 +778,23 @@ function renderAdminDashboard(){
     }).join("")}
   </div>`;
 
-  // 구분선
-  html += `<div style="margin:16px 0 8px;font-size:13px;font-weight:700;color:var(--navy)">전체 학생 목록</div>`;
-
-  // 학생 목록
-  html += all.map(([id,s])=>{
-    const st=statusOf(id);
-    return `<div class="card" data-open="${id}" style="cursor:pointer">
-      <div class="row">
-        <div><div class="name">${esc(s.name)} <span class="pill">${s.year}년 ${s.track}</span></div>
-        <div class="meta">${esc(s.dept)} · ${esc(s.cls)} · 담당: ${userLabelFull(s.owner)}</div></div>
-        <div class="badge ${st.cls}">${st.label}</div>
-      </div></div>`;
-  }).join("");
+  // 학생 목록 (필터 포함)
+  html += `<div style="margin:16px 0 6px;font-size:13px;font-weight:700;color:var(--navy)">전체 학생 목록</div>`;
+  const {bar: adBar, filtered: adFiltered} = makeFilterBar(all);
+  html += adBar;
+  if(!adFiltered.length){
+    html += `<div class="empty">해당 조건의 학생이 없습니다.</div>`;
+  } else {
+    html += adFiltered.map(([id,s])=>{
+      const st=statusOf(id);
+      return `<div class="card" data-open="${id}" style="cursor:pointer">
+        <div class="row">
+          <div><div class="name">${esc(s.name)} <span class="pill">${s.year}년 ${s.track}</span></div>
+          <div class="meta">${esc(s.dept)} · ${esc(s.cls)} · 담당: ${userLabelFull(s.owner)}</div></div>
+          <div class="badge ${st.cls}">${st.label}</div>
+        </div></div>`;
+    }).join("");
+  }
 
   return html;
 }
@@ -985,7 +1031,7 @@ function renderDetail(studentId){
 // ─── 앱 이벤트 ──────────────────────────────────────────
 function attachAppEvents(){
   q("logout-btn", e=> e.onclick=()=> auth.signOut());
-  document.querySelectorAll(".tab").forEach(t=>{ t.onclick=()=>{ view.tab=t.dataset.tab; view.studentId=null; render(); }; });
+  document.querySelectorAll(".tab").forEach(t=>{ t.onclick=()=>{ view.tab=t.dataset.tab; view.studentId=null; view.filterDept=''; view.filterCls=''; render(); }; });
   document.querySelectorAll("[data-open]").forEach(c=>{ c.onclick=()=>{ view.studentId=c.dataset.open; view.verdictPick=null; view.reviewComment=""; view.adminVerdict=null; view.adminComment=""; view.editingStudent=false; render(); }; });
   q("back-btn", e=> e.onclick=()=>{ view.studentId=null; render(); });
 
