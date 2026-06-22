@@ -948,22 +948,31 @@ function renderDetail(studentId){
       }
 
       // 리뷰어 의견
+      const reviewerColors = [
+        {bg:"#EEF2FF", border:"#6366F1", label:"#4338CA"},  // 리뷰어 1: 인디고
+        {bg:"#ECFDF5", border:"#10B981", label:"#065F46"},   // 리뷰어 2: 에메랄드
+      ];
       rd.reviewers.forEach(rv=>{
-        html+=`<div style="margin-bottom:10px">
-          <div class="meta" style="font-weight:700;color:var(--navy)">
-            리뷰어 ${rv.slot}${admin?" · "+userLabelFull(rv.user):""}
+        const rc = reviewerColors[(rv.slot-1) % 2];
+        html+=`<div style="margin-bottom:10px;border-left:3px solid ${rc.border};padding-left:10px">
+          <div style="font-size:12px;font-weight:700;color:${rc.label};margin-bottom:4px;display:flex;align-items:center;gap:6px">
+            <span style="background:${rc.border};color:#fff;font-size:10px;padding:1px 7px;border-radius:10px">리뷰어 ${rv.slot}</span>
+            ${admin?" <span style='color:var(--muted);font-weight:400'>"+userLabelFull(rv.user)+"</span>":""}
           </div>
           ${rv.feedback
             ?`<div class="decision-box ${rv.feedback.verdict}"><div class="v">${VMAP[rv.feedback.verdict]}</div><div>${esc(rv.feedback.comment)}</div></div>`
-            :`<div class="meta" style="color:var(--muted)">마감 ${rv.deadline} · 리뷰 작성 전</div>`}
+            :`<div style="font-size:12.5px;color:var(--muted);font-style:italic">마감 ${rv.deadline} · 리뷰 작성 전</div>`}
         </div>`;
       });
 
       // 관리자 최종 결정
       if(rd.adminDecision){
-        html+=`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-          <div class="meta" style="font-weight:700;color:var(--navy);margin-bottom:4px">원장/부원장 최종 결정</div>
-          <div class="decision-box ${rd.adminDecision.verdict}">
+        html+=`<div style="margin-top:12px;padding:12px;background:#FFF8F0;border:1px solid #F59E0B;border-radius:8px;border-left:4px solid #D97706">
+          <div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+            <span style="background:#D97706;color:#fff;font-size:10px;padding:1px 7px;border-radius:10px">최종 결정</span>
+            원장 / 부원장
+          </div>
+          <div class="decision-box ${rd.adminDecision.verdict}" style="margin-top:0">
             <div class="v">${VMAP[rd.adminDecision.verdict]}</div>
             <div>${esc(rd.adminDecision.comment)}</div>
             ${rd.adminDecision.verdict!=="O"&&rd.adminDecision.resubmitDeadline
@@ -1022,7 +1031,7 @@ function renderDetail(studentId){
         <div class="sectiontitle" style="margin-top:0">리뷰어 지정 (${sub.rounds.length+1}차)</div>
         <label>리뷰어 1</label><select id="a-r1">${opts}</select>
         <label>리뷰어 2</label><select id="a-r2">${opts}</select>
-        <label>마감일</label><input id="a-dl" type="date" value="${todayPlus(3)}" />
+        <label>마감일</label><input id="a-dl" type="date" value="${todayPlus(7)}" />
         <div style="margin-top:12px"><button class="btn" id="assign-btn">리뷰 배정하기</button></div>
       </div>`;
     } else if(r && !r.adminDecision){
@@ -1039,7 +1048,7 @@ function renderDetail(studentId){
           </div>
           <textarea id="admin-cmt" placeholder="선생님에게 전달할 종합 의견을 입력하세요...">${esc(view.adminComment)}</textarea>
           <label>재제출 기한</label>
-          <input id="resub-dl" type="date" value="${view.resubmitDeadline||todayPlus(5)}" />
+          <input id="resub-dl" type="date" value="${view.resubmitDeadline||todayPlus(7)}" />
           <div style="margin-top:10px"><button class="btn" id="admin-decide-btn">최종 결정 전달</button></div>
         </div>`;
       }
@@ -1150,7 +1159,7 @@ function attachAppEvents(){
     if(prev && prev.adminDecision && prev.adminDecision.verdict!=="O"){
       sub.rounds.push({
         versionIndex:newVIdx,
-        reviewers:prev.reviewers.map(rv=>({ slot:rv.slot, user:rv.user, deadline:todayPlus(3), feedback:null })),
+        reviewers:prev.reviewers.map(rv=>({ slot:rv.slot, user:rv.user, deadline:todayPlus(7), feedback:null })),
         adminDecision:null
       });
     }
