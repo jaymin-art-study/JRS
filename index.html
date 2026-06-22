@@ -471,11 +471,137 @@ function renderMyStatusDashboard(){
   return html;
 }
 
+// ─── 학생 상태 분류 헬퍼 ────────────────────────────────
+function classifyStudent(id){
+  const sub = subOf(id);
+  const r = lastRound(sub);
+  if(!sub.versions.length) return "미제출";
+  if(!r) return "배정대기";
+  if(!r.adminDecision){
+    const done = r.reviewers.filter(rv=>rv.feedback).length;
+    return done >= 2 ? "결정대기" : "리뷰중";
+  }
+  return r.adminDecision.verdict === "O" ? "승인완료" : "수정요청";
+}
+
 // ─── 관리자 전체 현황 ────────────────────────────────────
 function renderAdminDashboard(){
-  const all=Object.entries(DATA.students);
+  const all = Object.entries(DATA.students);
   if(!all.length) return `<div class="empty">아직 등록된 학생이 없습니다.</div>`;
-  return all.map(([id,s])=>{
+
+  // ── 통계 계산 ──
+  const STATUS_LABELS = {
+    미제출:"미제출", 배정대기:"배정 대기", 리뷰중:"리뷰 진행중",
+    결정대기:"최종결정 대기", 수정요청:"수정 요청", 승인완료:"승인 완료"
+  };
+  const STATUS_CLS = {
+    미제출:"b-wait", 배정대기:"b-wait", 리뷰중:"b-rev",
+    결정대기:"b-mid", 수정요청:"b-wait", 승인완료:"b-done"
+  };
+
+  // 전체 요약
+  const total = all.length;
+  const approved = all.filter(([id])=>classifyStudent(id)==="승인완료").length;
+  const inProgress = all.filter(([id])=>!["미제출","승인완료"].includes(classifyStudent(id))).length;
+  const pct = total > 0 ? Math.round(approved/total*100) : 0;
+
+  // 학과별
+  const deptStats = {};
+  all.forEach(([id,s])=>{
+    const dept = s.dept || "기타";
+    if(!deptStats[dept]) deptStats[dept] = {total:0, 미제출:0, 리뷰중:0, 결정대기:0, 수정요청:0, 승인완료:0, 배정대기:0};
+    deptStats[dept].total++;
+    deptStats[dept][classifyStudent(id)]++;
+  });
+
+  // 반별
+  const clsStats = {};
+  all.forEach(([id,s])=>{
+    const cls = s.cls || "미지정";
+    if(!clsStats[cls]) clsStats[cls] = {total:0, approved:0, inProgress:0};
+    clsStats[cls].total++;
+    const st = classifyStudent(id);
+    if(st === "승인완료") clsStats[cls].approved++;
+    else if(st !== "미제출") clsStats[cls].inProgress++;
+  });
+  // Sort classes
+  const sortedCls = Object.entries(clsStats).sort((a,b)=>a[0].localeCompare(b[0],"ko"));
+
+  // ── 렌더 ──
+  let html = "";
+
+  // 전체 요약 카드
+  html += `<div class="card">
+    <div class="sectiontitle" style="margin-top:0">📊 전체 진행 현황</div>
+    <div style="display:flex;align-items:center;gap:16px;margin:10px 0 14px">
+      <div style="font-size:28px;font-weight:700;color:var(--navy)">${approved}
+        <span style="font-size:14px;font-weight:400;color:var(--muted)"> / ${total}명 승인</span></div>
+      <div style="flex:1">
+        <div style="background:var(--border);border-radius:20px;height:12px;overflow:hidden">
+          <div style="background:var(--green);height:100%;width:${pct}%;border-radius:20px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:4px">${pct}% 완료 · 진행중 ${inProgress}명 · 미제출 ${total-approved-inProgress}명</div>
+      </div>
+    </div>
+  </div>`;
+
+  // 학과별 통계
+  html += `<div class="card">
+    <div class="sectiontitle" style="margin-top:0">🎓 학과별 현황</div>
+    <table class="simple">
+      <tr><th>학과</th><th>전체</th><th>미제출</th><th>리뷰중</th><th>결정대기</th><th>수정요청</th><th>✅승인</th></tr>
+      ${Object.entries(deptStats).map(([dept,st])=>`
+      <tr>
+        <td><b>${esc(dept)}</b></td>
+        <td>${st.total}</td>
+        <td style="color:${st.미제출>0?"var(--red)":"var(--muted)"}">${st.미제출}</td>
+        <td style="color:${st.리뷰중+st.배정대기>0?"var(--lblue)":"var(--muted)"}">${st.리뷰중+st.배정대기}</td>
+        <td style="color:${st.결정대기>0?"var(--amber)":"var(--muted)"}">${st.결정대기}</td>
+        <td style="color:${st.수정요청>0?"var(--red)":"var(--muted)"}">${st.수정요청}</td>
+        <td style="color:${st.승인완료>0?"var(--green)":"var(--muted)"}"><b>${st.승인완료}</b></td>
+      </tr>`).join("")}
+      <tr style="background:#f8f9fc;font-weight:700">
+        <td>합계</td>
+        <td>${total}</td>
+        <td>${all.filter(([id])=>classifyStudent(id)==="미제출").length}</td>
+        <td>${all.filter(([id])=>["리뷰중","배정대기"].includes(classifyStudent(id))).length}</td>
+        <td>${all.filter(([id])=>classifyStudent(id)==="결정대기").length}</td>
+        <td>${all.filter(([id])=>classifyStudent(id)==="수정요청").length}</td>
+        <td>${approved}</td>
+      </tr>
+    </table>
+  </div>`;
+
+  // 반별 통계
+  html += `<div class="card">
+    <div class="sectiontitle" style="margin-top:0">📋 반별 현황</div>
+    <table class="simple">
+      <tr><th>반</th><th>전체</th><th>진행중</th><th>✅승인</th><th>완료율</th></tr>
+      ${sortedCls.map(([cls,st])=>{
+        const clsPct = st.total>0 ? Math.round(st.approved/st.total*100) : 0;
+        return `<tr>
+          <td><b>${esc(cls)}</b></td>
+          <td>${st.total}</td>
+          <td style="color:${st.inProgress>0?"var(--lblue)":"var(--muted)"}">${st.inProgress}</td>
+          <td style="color:${st.approved>0?"var(--green)":"var(--muted)"}"><b>${st.approved}</b></td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div style="background:var(--border);border-radius:10px;height:6px;width:60px;overflow:hidden">
+                <div style="background:var(--green);height:100%;width:${clsPct}%;border-radius:10px"></div>
+              </div>
+              <span style="font-size:11px;color:var(--muted)">${clsPct}%</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join("")}
+    </table>
+  </div>`;
+
+  // 구분선
+  html += `<div style="margin:16px 0 8px;font-size:13px;font-weight:700;color:var(--navy)">전체 학생 목록</div>`;
+
+  // 학생 목록
+  html += all.map(([id,s])=>{
     const st=statusOf(id);
     return `<div class="card" data-open="${id}" style="cursor:pointer">
       <div class="row">
@@ -484,6 +610,8 @@ function renderAdminDashboard(){
         <div class="badge ${st.cls}">${st.label}</div>
       </div></div>`;
   }).join("");
+
+  return html;
 }
 
 // ─── 리뷰어 현황 ────────────────────────────────────────
@@ -581,10 +709,25 @@ function renderDetail(studentId){
     </div>`;
   }
 
-  // 회차별 리뷰 기록 (담당 선생님 + 관리자에게만)
-  if(sub.rounds.length && (isOwner||admin)){
+  // 회차별 리뷰 기록
+  if(sub.rounds.length){
     sub.rounds.forEach((rd,i)=>{
+      // 관리자: 항상 전부 보임
+      // 담당 선생님: 관리자가 최종결정 보낸 후에만 보임
+      const showRound = admin || (isOwner && rd.adminDecision);
+      if(!showRound) return;
+
       html+=`<div class="roundhead">${i+1}차 리뷰</div><div class="card">`;
+
+      // 의견서가 있으면 표시
+      const versionData = sub.versions[rd.versionIndex];
+      if(versionData?.comment){
+        html+=`<div style="margin-bottom:12px;padding:10px;background:#f0f4ff;border-radius:8px;border-left:3px solid var(--lblue)">
+          <div class="meta" style="font-weight:700;color:var(--lblue);margin-bottom:4px">📝 제출자 의견서</div>
+          <div style="font-size:13px;line-height:1.5">${esc(versionData.comment)}</div>
+        </div>`;
+      }
+
       rd.reviewers.forEach(rv=>{
         html+=`<div style="margin-bottom:10px">
           <div class="meta" style="font-weight:700;color:var(--navy)">
@@ -601,7 +744,7 @@ function renderDetail(studentId){
           <div class="decision-box ${rd.adminDecision.verdict}">
             <div class="v">${VMAP[rd.adminDecision.verdict]}</div>
             <div>${esc(rd.adminDecision.comment)}</div>
-            ${rd.adminDecision.resubmitDeadline&&rd.adminDecision.verdict!=="O"
+            ${rd.adminDecision.verdict!=="O"&&rd.adminDecision.resubmitDeadline
               ?`<div class="meta" style="margin-top:6px">재제출 기한: ${rd.adminDecision.resubmitDeadline}</div>`:""}
           </div>
         </div>`;
@@ -612,12 +755,36 @@ function renderDetail(studentId){
 
   // 담당 선생님: 제출/재제출 칸
   if(isOwner){
-    const canSubmit = !r || !r.adminDecision || r.adminDecision.verdict!=="O";
+    // 첫 제출: 아직 버전 없음
+    const isFirstSubmit = vIdx < 0;
+    // 재제출: 관리자가 최종결정을 내렸고 승인(O)이 아닌 경우
+    const isResubmit = r && r.adminDecision && r.adminDecision.verdict !== "O";
+    const canSubmit = isFirstSubmit || isResubmit;
+
     if(canSubmit){
+      const label = isFirstSubmit ? "지원동기 제출" : "수정본 제출";
+      const deadline = isResubmit && r.adminDecision.resubmitDeadline
+        ? `<div class="meta" style="margin-bottom:10px">재제출 기한: <b>${r.adminDecision.resubmitDeadline}</b></div>` : "";
       html+=`<div class="card">
-        <div class="sectiontitle" style="margin-top:0">${vIdx>=0?"수정본 제출":"지원동기 첫 제출"}</div>
-        <textarea id="new-text" placeholder="지원동기를 입력하세요..."></textarea>
-        <div style="margin-top:10px"><button class="btn" id="submit-ver">${vIdx>=0?"수정본 제출":"제출하기"}</button></div>
+        <div class="sectiontitle" style="margin-top:0">${label}</div>
+        ${deadline}
+        <label>지원동기 본문 <span style="color:var(--red)">*필수</span></label>
+        <textarea id="new-text" placeholder="지원동기 내용을 입력하세요..." style="min-height:150px"></textarea>
+        ${isResubmit ? `
+        <label>의견서 <span style="color:var(--muted);font-weight:400">(선택 — 리뷰어 의견에 대한 반응, 수정 방향 등)</span></label>
+        <textarea id="new-comment" placeholder="의견이 있으면 자유롭게 작성해주세요. 비워두어도 됩니다." style="min-height:80px"></textarea>
+        ` : ""}
+        <div style="margin-top:12px"><button class="btn" id="submit-ver">${label}</button></div>
+      </div>`;
+    } else if(!isFirstSubmit && r && !r.adminDecision){
+      // 리뷰 진행 중 — 상태 안내
+      const done = r ? r.reviewers.filter(rv=>rv.feedback).length : 0;
+      html+=`<div class="card" style="background:#f8f9fc">
+        <div style="text-align:center;padding:16px 0;color:var(--muted)">
+          <div style="font-size:22px;margin-bottom:8px">⏳</div>
+          <div style="font-weight:700;color:var(--text);margin-bottom:4px">리뷰 진행 중</div>
+          <div style="font-size:12.5px">리뷰어 ${done}/2명 완료 · 원장/부원장이 최종 결정을 보내면 확인 가능해요</div>
+        </div>
       </div>`;
     }
   }
