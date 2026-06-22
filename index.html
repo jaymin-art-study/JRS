@@ -159,14 +159,15 @@ function statusOf(id){
   const r = lastRound(sub);
   if(!r) return {label:"리뷰 배정 필요", cls:"b-wait"};
   const n = sub.rounds.length;
+  const nth = n+"차";
   if(!r.adminDecision){
     const done = r.reviewers.filter(rv=>rv.feedback).length;
-    if(done>=2) return {label:`${n}차 · 최종결정 대기`, cls:"b-mid"};
+    if(done>=2) return {label:`${nth} · 최종결정 대기`, cls:"b-mid"};
     const over = r.reviewers.some(rv=>!rv.feedback && new Date(rv.deadline)<new Date());
-    return {label:`${n}차 리뷰중 (${done}/2)${over?" · 기한초과":""}`, cls:over?"b-wait":"b-rev"};
+    return {label:`${nth} 리뷰중 (${done}/2)${over?" · 기한초과":""}`, cls:over?"b-wait":"b-rev"};
   }
   if(r.adminDecision.verdict==="O") return {label:"✅ 승인 완료", cls:"b-done"};
-  return {label:`${n}차 수정요청 (${r.adminDecision.resubmitDeadline||"-"})`, cls:"b-wait"};
+  return {label:`${nth} 수정요청 (재제출기한 ${r.adminDecision.resubmitDeadline||"-"})`, cls:"b-wait"};
 }
 
 // ─── 필터 헬퍼 ──────────────────────────────────────────
@@ -368,7 +369,7 @@ function renderApp(){
   const myStudentCount = Object.values(DATA.students).filter(s=>s.owner===session.uid).length;
   const tabs = [];
   if(admin) tabs.push({k:"admin",l:"전체 현황 (관리자)"});
-  tabs.push({k:"overview",l:"학원 전체 현황"});
+  if(!admin) tabs.push({k:"overview",l:"학원 전체 현황"});
   tabs.push({k:"status",l:"내 학생 현황"});
   tabs.push({k:"mine",l:"학생 추가/관리"});
   if(myAssignments.length || view.tab==="review") tabs.push({k:"review",l:`리뷰 요청 (${myAssignments.length})`});
@@ -449,7 +450,7 @@ function renderOverview(){
   const admin = isAdmin();
   const total = all.length;
   const approved = all.filter(([id])=>classifyStudent(id)==="승인완료").length;
-  const inProgress = all.filter(([id])=>!["미제출","승인완료"].includes(classifyStudent(id))).length;
+  const inProgress = all.filter(([id])=>{ const r=classifyStudent(id); return r!=="미제출" && r!=="승인완료"; }).length;
   const pct = total>0 ? Math.round(approved/total*100) : 0;
 
   // 학과별
@@ -458,7 +459,13 @@ function renderOverview(){
     const dept = s.dept||"기타";
     if(!deptStats[dept]) deptStats[dept]={total:0,미제출:0,리뷰중:0,결정대기:0,수정요청:0,승인완료:0,배정대기:0};
     deptStats[dept].total++;
-    deptStats[dept][classifyStudent(id)]++;
+    const raw = classifyStudent(id);
+    if(raw==="미제출") deptStats[dept].미제출++;
+    else if(raw==="배정대기") deptStats[dept].배정대기++;
+    else if(raw.includes("리뷰중")) deptStats[dept].리뷰중++;
+    else if(raw.includes("결정대기")) deptStats[dept].결정대기++;
+    else if(raw==="수정요청") deptStats[dept].수정요청++;
+    else if(raw==="승인완료") deptStats[dept].승인완료++;
   });
 
   // 학과+반별
@@ -468,9 +475,9 @@ function renderOverview(){
     if(!deptClsStats[dept]) deptClsStats[dept]={};
     if(!deptClsStats[dept][cls]) deptClsStats[dept][cls]={total:0,approved:0,inProgress:0,notSubmitted:0};
     deptClsStats[dept][cls].total++;
-    const st=classifyStudent(id);
-    if(st==="승인완료") deptClsStats[dept][cls].approved++;
-    else if(st==="미제출") deptClsStats[dept][cls].notSubmitted++;
+    const raw2=classifyStudent(id);
+    if(raw2==="승인완료") deptClsStats[dept][cls].approved++;
+    else if(raw2==="미제출") deptClsStats[dept][cls].notSubmitted++;
     else deptClsStats[dept][cls].inProgress++;
   });
 
@@ -645,7 +652,8 @@ function classifyStudent(id){
   if(!r) return "배정대기";
   if(!r.adminDecision){
     const done = r.reviewers.filter(rv=>rv.feedback).length;
-    return done >= 2 ? "결정대기" : "리뷰중";
+    const n = sub.rounds.length;
+    return done >= 2 ? `${n}차결정대기` : `${n}차리뷰중`;
   }
   return r.adminDecision.verdict === "O" ? "승인완료" : "수정요청";
 }
@@ -668,7 +676,7 @@ function renderAdminDashboard(){
   // 전체 요약
   const total = all.length;
   const approved = all.filter(([id])=>classifyStudent(id)==="승인완료").length;
-  const inProgress = all.filter(([id])=>!["미제출","승인완료"].includes(classifyStudent(id))).length;
+  const inProgress = all.filter(([id])=>{ const r=classifyStudent(id); return r!=="미제출" && r!=="승인완료"; }).length;
   const pct = total > 0 ? Math.round(approved/total*100) : 0;
 
   // 학과별
@@ -979,7 +987,6 @@ function renderDetail(studentId){
     const needsAssign = latest && (!r || r.versionIndex!==vIdx);
     if(needsAssign){
       const opts=Object.entries(DATA.users)
-        .filter(([u])=>u!==s.owner)
         .map(([u,p])=>`<option value="${u}">${esc(p.dept||"-")} · ${esc(p.displayName)}${p.role==="admin"?" (관리자)":""}${p.interest?" — "+esc(p.interest.slice(0,20)):""}</option>`)
         .join("");
       html+=`<div class="card">
@@ -1130,7 +1137,6 @@ function attachAppEvents(){
   // 리뷰어 배정
   q("assign-btn", btn=> btn.onclick=async()=>{
     const r1=val("a-r1"), r2=val("a-r2"), dl=val("a-dl");
-    if(r1===r2){ alert("리뷰어 1과 2는 다른 사람이어야 합니다."); return; }
     btn.disabled=true;
     const sub=subOf(view.studentId);
     sub.rounds.push({
