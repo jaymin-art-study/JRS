@@ -331,7 +331,8 @@ function renderApp(){
 
   const myStudentCount = Object.values(DATA.students).filter(s=>s.owner===session.uid).length;
   const tabs = [];
-  if(admin) tabs.push({k:"admin",l:"전체 현황"});
+  if(admin) tabs.push({k:"admin",l:"전체 현황 (관리자)"});
+  tabs.push({k:"overview",l:"학원 전체 현황"});
   tabs.push({k:"status",l:"내 학생 현황"});
   tabs.push({k:"mine",l:"학생 추가/관리"});
   if(myAssignments.length || view.tab==="review") tabs.push({k:"review",l:`리뷰 요청 (${myAssignments.length})`});
@@ -341,6 +342,7 @@ function renderApp(){
   let body="";
   if(view.studentId)                    body=renderDetail(view.studentId);
   else if(view.tab==="admin"&&admin)    body=renderAdminDashboard();
+  else if(view.tab==="overview")        body=renderOverview();
   else if(view.tab==="status")          body=renderMyStatusDashboard();
   else if(view.tab==="load"&&admin)     body=renderReviewerLoad();
   else if(view.tab==="users"&&admin)    body=renderUserManagement();
@@ -402,6 +404,128 @@ function renderMyStudents(){
     </div>`;
 }
 
+
+// ─── 학원 전체 현황 (선생님도 볼 수 있는 통계 + 학생목록) ─────
+function renderOverview(){
+  const all = Object.entries(DATA.students);
+  if(!all.length) return `<div class="empty">아직 등록된 학생이 없습니다.</div>`;
+
+  const admin = isAdmin();
+  const total = all.length;
+  const approved = all.filter(([id])=>classifyStudent(id)==="승인완료").length;
+  const inProgress = all.filter(([id])=>!["미제출","승인완료"].includes(classifyStudent(id))).length;
+  const pct = total>0 ? Math.round(approved/total*100) : 0;
+
+  // 학과별
+  const deptStats = {};
+  all.forEach(([id,s])=>{
+    const dept = s.dept||"기타";
+    if(!deptStats[dept]) deptStats[dept]={total:0,미제출:0,리뷰중:0,결정대기:0,수정요청:0,승인완료:0,배정대기:0};
+    deptStats[dept].total++;
+    deptStats[dept][classifyStudent(id)]++;
+  });
+
+  // 학과+반별
+  const deptClsStats = {};
+  all.forEach(([id,s])=>{
+    const dept=s.dept||"기타"; const cls=s.cls||"미지정";
+    if(!deptClsStats[dept]) deptClsStats[dept]={};
+    if(!deptClsStats[dept][cls]) deptClsStats[dept][cls]={total:0,approved:0,inProgress:0,notSubmitted:0};
+    deptClsStats[dept][cls].total++;
+    const st=classifyStudent(id);
+    if(st==="승인완료") deptClsStats[dept][cls].approved++;
+    else if(st==="미제출") deptClsStats[dept][cls].notSubmitted++;
+    else deptClsStats[dept][cls].inProgress++;
+  });
+
+  let html = "";
+
+  // 전체 요약
+  html += `<div class="card">
+    <div class="sectiontitle" style="margin-top:0">📊 전체 진행 현황</div>
+    <div style="display:flex;align-items:center;gap:16px;margin:10px 0 14px">
+      <div style="font-size:28px;font-weight:700;color:var(--navy)">${approved}
+        <span style="font-size:14px;font-weight:400;color:var(--muted)"> / ${total}명 승인</span></div>
+      <div style="flex:1">
+        <div style="background:var(--border);border-radius:20px;height:12px;overflow:hidden">
+          <div style="background:var(--green);height:100%;width:${pct}%;border-radius:20px"></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:4px">${pct}% 완료 · 진행중 ${inProgress}명 · 미제출 ${total-approved-inProgress}명</div>
+      </div>
+    </div>
+  </div>`;
+
+  // 학과별 통계
+  html += `<div class="card">
+    <div class="sectiontitle" style="margin-top:0">🎓 학과별 현황</div>
+    <table class="simple">
+      <tr><th>학과</th><th>전체</th><th>미제출</th><th>리뷰중</th><th>결정대기</th><th>수정요청</th><th>✅승인</th></tr>
+      ${Object.entries(deptStats).map(([dept,st])=>`
+      <tr>
+        <td><b>${esc(dept)}</b></td>
+        <td>${st.total}</td>
+        <td style="color:${st.미제출>0?"var(--red)":"var(--muted)"}">${st.미제출}</td>
+        <td style="color:${(st.리뷰중+st.배정대기)>0?"var(--lblue)":"var(--muted)"}">${st.리뷰중+st.배정대기}</td>
+        <td style="color:${st.결정대기>0?"var(--amber)":"var(--muted)"}">${st.결정대기}</td>
+        <td style="color:${st.수정요청>0?"var(--red)":"var(--muted)"}">${st.수정요청}</td>
+        <td style="color:${st.승인완료>0?"var(--green)":"var(--muted)"}"><b>${st.승인완료}</b></td>
+      </tr>`).join("")}
+    </table>
+  </div>`;
+
+  // 학과·반별 통계
+  html += `<div class="card">
+    <div class="sectiontitle" style="margin-top:0">📋 학과·반별 현황</div>
+    ${Object.entries(deptClsStats).map(([dept,clsMap])=>{
+      const sortedCls=Object.entries(clsMap).sort((a,b)=>a[0].localeCompare(b[0],"ko"));
+      const dTotal=sortedCls.reduce((s,[,v])=>s+v.total,0);
+      const dApproved=sortedCls.reduce((s,[,v])=>s+v.approved,0);
+      const dPct=dTotal>0?Math.round(dApproved/dTotal*100):0;
+      return `<div style="margin-bottom:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-size:13px;font-weight:700;color:var(--navy);padding:3px 10px;background:#EAF0FA;border-radius:6px">${esc(dept)}</div>
+          <div style="font-size:12px;color:var(--muted)">${dTotal}명 · 승인 ${dApproved}명 (${dPct}%)</div>
+        </div>
+        <table class="simple">
+          <tr><th>반</th><th>전체</th><th>미제출</th><th>진행중</th><th>✅승인</th><th>완료율</th></tr>
+          ${sortedCls.map(([cls,st])=>{
+            const p=st.total>0?Math.round(st.approved/st.total*100):0;
+            return `<tr>
+              <td><b>${esc(cls)}</b></td><td>${st.total}</td>
+              <td style="color:${st.notSubmitted>0?"var(--red)":"var(--muted)"}">${st.notSubmitted}</td>
+              <td style="color:${st.inProgress>0?"var(--lblue)":"var(--muted)"}">${st.inProgress}</td>
+              <td style="color:${st.approved>0?"var(--green)":"var(--muted)"}"><b>${st.approved}</b></td>
+              <td><div style="display:flex;align-items:center;gap:6px">
+                <div style="background:var(--border);border-radius:10px;height:6px;width:50px;overflow:hidden">
+                  <div style="background:var(--green);height:100%;width:${p}%;border-radius:10px"></div>
+                </div>
+                <span style="font-size:11px;color:var(--muted)">${p}%</span>
+              </div></td>
+            </tr>`;
+          }).join("")}
+        </table>
+      </div>`;
+    }).join("")}
+  </div>`;
+
+  // 전체 학생 목록 (선생님: 담당자 이름·리뷰 내용 비공개)
+  html += `<div style="margin:16px 0 8px;font-size:13px;font-weight:700;color:var(--navy)">전체 학생 목록</div>`;
+  html += all.map(([id,s])=>{
+    const st=statusOf(id);
+    const isMyStudent = s.owner===session.uid;
+    return `<div class="card" ${isMyStudent?`data-open="${id}" style="cursor:pointer"`:`style="opacity:.9"`}>
+      <div class="row">
+        <div>
+          <div class="name">${esc(s.name)} <span class="pill">${s.year}년 ${s.track}</span></div>
+          <div class="meta">${esc(s.dept)} · ${esc(s.cls)}${isMyStudent?" · <b style='color:var(--lblue)'>내 학생</b>":""}</div>
+        </div>
+        <div class="badge ${st.cls}">${st.label}</div>
+      </div>
+    </div>`;
+  }).join("");
+
+  return html;
+}
 
 // ─── 내 학생 현황 (선생님용) ─────────────────────────────
 function renderMyStatusDashboard(){
@@ -514,18 +638,19 @@ function renderAdminDashboard(){
     deptStats[dept][classifyStudent(id)]++;
   });
 
-  // 반별
-  const clsStats = {};
+  // 학과+반별 (dept → cls → stats)
+  const deptClsStats = {};
   all.forEach(([id,s])=>{
-    const cls = s.cls || "미지정";
-    if(!clsStats[cls]) clsStats[cls] = {total:0, approved:0, inProgress:0};
-    clsStats[cls].total++;
+    const dept = s.dept || "기타";
+    const cls  = s.cls  || "미지정";
+    if(!deptClsStats[dept]) deptClsStats[dept] = {};
+    if(!deptClsStats[dept][cls]) deptClsStats[dept][cls] = {total:0, approved:0, inProgress:0, notSubmitted:0};
+    deptClsStats[dept][cls].total++;
     const st = classifyStudent(id);
-    if(st === "승인완료") clsStats[cls].approved++;
-    else if(st !== "미제출") clsStats[cls].inProgress++;
+    if(st === "승인완료")      deptClsStats[dept][cls].approved++;
+    else if(st === "미제출")    deptClsStats[dept][cls].notSubmitted++;
+    else                        deptClsStats[dept][cls].inProgress++;
   });
-  // Sort classes
-  const sortedCls = Object.entries(clsStats).sort((a,b)=>a[0].localeCompare(b[0],"ko"));
 
   // ── 렌더 ──
   let html = "";
@@ -572,29 +697,43 @@ function renderAdminDashboard(){
     </table>
   </div>`;
 
-  // 반별 통계
+  // 학과+반별 통계
   html += `<div class="card">
-    <div class="sectiontitle" style="margin-top:0">📋 반별 현황</div>
-    <table class="simple">
-      <tr><th>반</th><th>전체</th><th>진행중</th><th>✅승인</th><th>완료율</th></tr>
-      ${sortedCls.map(([cls,st])=>{
-        const clsPct = st.total>0 ? Math.round(st.approved/st.total*100) : 0;
-        return `<tr>
-          <td><b>${esc(cls)}</b></td>
-          <td>${st.total}</td>
-          <td style="color:${st.inProgress>0?"var(--lblue)":"var(--muted)"}">${st.inProgress}</td>
-          <td style="color:${st.approved>0?"var(--green)":"var(--muted)"}"><b>${st.approved}</b></td>
-          <td>
-            <div style="display:flex;align-items:center;gap:6px">
-              <div style="background:var(--border);border-radius:10px;height:6px;width:60px;overflow:hidden">
-                <div style="background:var(--green);height:100%;width:${clsPct}%;border-radius:10px"></div>
-              </div>
-              <span style="font-size:11px;color:var(--muted)">${clsPct}%</span>
-            </div>
-          </td>
-        </tr>`;
-      }).join("")}
-    </table>
+    <div class="sectiontitle" style="margin-top:0">📋 학과·반별 현황</div>
+    ${Object.entries(deptClsStats).map(([dept, clsMap])=>{
+      const sortedCls = Object.entries(clsMap).sort((a,b)=>a[0].localeCompare(b[0],"ko"));
+      const deptTotal    = sortedCls.reduce((s,[,v])=>s+v.total,0);
+      const deptApproved = sortedCls.reduce((s,[,v])=>s+v.approved,0);
+      const deptPct = deptTotal>0 ? Math.round(deptApproved/deptTotal*100) : 0;
+      return `
+        <div style="margin-bottom:18px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-size:13px;font-weight:700;color:var(--navy);padding:3px 10px;background:#EAF0FA;border-radius:6px">${esc(dept)}</div>
+            <div style="font-size:12px;color:var(--muted)">${deptTotal}명 · 승인 ${deptApproved}명 (${deptPct}%)</div>
+          </div>
+          <table class="simple">
+            <tr><th>반</th><th>전체</th><th>미제출</th><th>진행중</th><th>✅승인</th><th>완료율</th></tr>
+            ${sortedCls.map(([cls,st])=>{
+              const pct = st.total>0 ? Math.round(st.approved/st.total*100) : 0;
+              return `<tr>
+                <td><b>${esc(cls)}</b></td>
+                <td>${st.total}</td>
+                <td style="color:${st.notSubmitted>0?"var(--red)":"var(--muted)"}">${st.notSubmitted}</td>
+                <td style="color:${st.inProgress>0?"var(--lblue)":"var(--muted)"}">${st.inProgress}</td>
+                <td style="color:${st.approved>0?"var(--green)":"var(--muted)"}"><b>${st.approved}</b></td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <div style="background:var(--border);border-radius:10px;height:6px;width:50px;overflow:hidden">
+                      <div style="background:var(--green);height:100%;width:${pct}%;border-radius:10px"></div>
+                    </div>
+                    <span style="font-size:11px;color:var(--muted)">${pct}%</span>
+                  </div>
+                </td>
+              </tr>`;
+            }).join("")}
+          </table>
+        </div>`;
+    }).join("")}
   </div>`;
 
   // 구분선
@@ -1045,7 +1184,7 @@ auth.onAuthStateChanged(async(user)=>{
         "students:", Object.keys(DATA.students).length);
 
       session={ uid:user.uid, email:user.email };
-      view.tab = DATA.users[user.uid]?.role==="admin" ? "admin" : "status";
+      view.tab = DATA.users[user.uid]?.role==="admin" ? "admin" : "overview";
       view.studentId=null;
     } catch(e) {
       console.error("[JRS] 로드 실패:", e.code, e.message);
