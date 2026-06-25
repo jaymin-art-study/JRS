@@ -171,6 +171,9 @@ function statusOf(id){
   return {label:`${nth} 수정요청 (재제출기한 ${r.adminDecision.resubmitDeadline||"-"})`, cls:"b-wait"};
 }
 
+// 즉시 로딩 스피너 표시 (Firebase 응답 전에도 보임)
+document.addEventListener('DOMContentLoaded', ()=>{ const r=document.getElementById('root'); if(r&&loading) r.innerHTML=`<div class='loading'><div class='spinner'></div><div>불러오는 중...</div></div>`; });
+
 // ─── 필터 헬퍼 ──────────────────────────────────────────
 window.__filterSet = function(type, val){
   if(type==="dept"){ view.filterDept=val; view.filterCls=""; }
@@ -686,7 +689,13 @@ function renderAdminDashboard(){
     const dept = s.dept || "기타";
     if(!deptStats[dept]) deptStats[dept] = {total:0, 미제출:0, 리뷰중:0, 결정대기:0, 수정요청:0, 승인완료:0, 배정대기:0};
     deptStats[dept].total++;
-    deptStats[dept][classifyStudent(id)]++;
+    const _st=classifyStudent(id);
+    if(_st==="미제출") deptStats[dept].미제출++;
+    else if(_st==="배정대기") deptStats[dept].배정대기++;
+    else if(_st.includes("리뷰중")) deptStats[dept].리뷰중++;
+    else if(_st.includes("결정대기")) deptStats[dept].결정대기++;
+    else if(_st==="수정요청") deptStats[dept].수정요청++;
+    else if(_st==="승인완료") deptStats[dept].승인완료++;
   });
 
   // 학과+반별 (dept → cls → stats)
@@ -1174,7 +1183,8 @@ function attachAppEvents(){
     btn.disabled=true;
     const id=view.studentId;
     const sub=subOf(id);
-    sub.versions.push({ text:txt, ts:Date.now() });
+    const cmt = val("new-comment").trim();
+    sub.versions.push({ text:txt, comment:cmt||"", ts:Date.now() });
     const newVIdx=sub.versions.length-1;
     const prev=lastRound(sub);
     if(prev && prev.adminDecision && prev.adminDecision.verdict!=="O"){
@@ -1186,11 +1196,12 @@ function attachAppEvents(){
     }
     try{
       await saveSubmission(id);
+      console.log("[JRS] 제출 완료 v"+newVIdx);
     } catch(e){
       alert("저장 실패: " + (e.message||e.code));
-      render(); return;
+      btn.disabled=false; render(); return;
     }
-    render();
+    view.studentId=null; view.tab="status"; render();
   });
 
   // 리뷰어 배정
