@@ -130,7 +130,8 @@ function makeDefaultView(){
 }
 
 // ─── 유틸 ──────────────────────────────────────────────
-function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function escLines(s){ return esc(s).replace(/\n/g,'<br>'); }
+function esc(s){ return (s||"");.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function uid(){ return "_" + Math.random().toString(36).slice(2,10); }
 function todayPlus(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function isAdmin(){ return session && DATA.users[session.uid] && DATA.users[session.uid].role === "admin"; }
@@ -939,11 +940,14 @@ function renderDetail(studentId){
         </div>`;
       }
 
-      // 의견서
+      // 의견서 (제출자가 남긴 선택 의견 — 리뷰어·관리자에게 표시)
       if(versionData?.comment){
-        html+=`<div style="margin-bottom:12px;padding:10px;background:#f0f4ff;border-radius:8px;border-left:3px solid var(--lblue)">
-          <div class="meta" style="font-weight:700;color:var(--lblue);margin-bottom:4px">📝 제출자 의견서</div>
-          <div style="font-size:13px;line-height:1.5">${esc(versionData.comment)}</div>
+        html+=`<div style="margin-bottom:14px;padding:12px 14px;background:#EEF6FF;border-radius:8px;border:1px solid #93C5FD;border-left:4px solid #3B82F6">
+          <div style="font-size:11.5px;font-weight:700;color:#1D4ED8;margin-bottom:6px;display:flex;align-items:center;gap:5px">
+            <span style="background:#3B82F6;color:#fff;font-size:10px;padding:1px 7px;border-radius:10px">제출자 의견</span>
+            <span style="color:var(--muted);font-weight:400">이번 차수 제출 시 남긴 메모</span>
+          </div>
+          <div style="font-size:13px;line-height:1.65;color:#1E3A5F;white-space:pre-wrap">${escLines(versionData.comment)}</div>
         </div>`;
       }
 
@@ -968,7 +972,7 @@ function renderDetail(studentId){
             ${admin?` <span style='color:var(--muted);font-weight:400'>${userLabelFull(rv.user)}</span>`:""}
           </div>
           ${rv.feedback
-            ?`<div class="decision-box ${rv.feedback.verdict}"><div class="v">${VMAP[rv.feedback.verdict]}</div><div>${esc(rv.feedback.comment)}</div></div>`
+            ?`<div class="decision-box ${rv.feedback.verdict}"><div class="v">${VMAP[rv.feedback.verdict]}</div><div style="white-space:pre-wrap">${escLines(rv.feedback.comment)}</div></div>`
             :`<div style="font-size:12.5px;color:var(--muted);font-style:italic">마감 ${rv.deadline} · 리뷰 작성 전</div>`}
         </div>`;
       });
@@ -991,7 +995,7 @@ function renderDetail(studentId){
           </div>
           <div class="decision-box ${rd.adminDecision.verdict}" style="margin-top:0">
             <div class="v">${VMAP[rd.adminDecision.verdict]}</div>
-            <div>${esc(rd.adminDecision.comment)}</div>
+            <div style="white-space:pre-wrap">${escLines(rd.adminDecision.comment)}</div>
             ${rd.adminDecision.verdict!=="O"&&rd.adminDecision.resubmitDeadline
               ?`<div class="meta" style="margin-top:6px">재제출 기한: ${rd.adminDecision.resubmitDeadline}</div>`:""}
           </div>
