@@ -130,8 +130,8 @@ function makeDefaultView(){
 }
 
 // ─── 유틸 ──────────────────────────────────────────────
+function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function escLines(s){ return esc(s).replace(/\n/g,'<br>'); }
-function esc(s){ return (s||"");.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function uid(){ return "_" + Math.random().toString(36).slice(2,10); }
 function todayPlus(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function isAdmin(){ return session && DATA.users[session.uid] && DATA.users[session.uid].role === "admin"; }
